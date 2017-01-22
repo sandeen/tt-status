@@ -85,7 +85,7 @@ int main(int argc, char **argv)
 			break;
 		case 'i':
 			strncpy(ipaddr, optarg, sizeof(ipaddr));
-			serport[31] = '\0';
+			ipaddr[15] = '\0';
 			break;
 		case 'p':
 			port = atoi(optarg);
