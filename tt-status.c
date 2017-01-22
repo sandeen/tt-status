@@ -34,8 +34,9 @@
 
 void usage(void)
 {
-	printf("Usage: tt-status [-h] [-s serial port][-i ip addr [-p port]]\n\n");
+	printf("Usage: tt-status [-h] [-d] [-s serial port][-i ip addr [-p port]]\n\n");
 	printf("-h\tShow this help\n");
+	printf("-d\tEnable debug\n");
 	printf("-s\tSerial Port Device for ModBus/RTU\n");
 	printf("-i\tIP Address for ModBus/TCP\n");
 	printf("-p\tTCP Port for ModBus/TCP (optional, default 502)\n");
@@ -68,16 +69,20 @@ int main(int argc, char **argv)
 	int c;
 	int i;
 	int err = 1;
+	int debug = 0;		/* debug output */
 	int port = 502;		/* default ModBus/TCP port */
 	char ipaddr[16] = "";	/* ModBus/TCP ip address */
 	char serport[32] = "";	/* ModBus/RTU serial port */
 	modbus_t *mb;		/* ModBus context */
 	uint16_t regs[8];	/* Holds results of register reads */
 
-	while ((c = getopt(argc, argv, "hs:i:p:")) != -1) {
+	while ((c = getopt(argc, argv, "dhds:i:p:")) != -1) {
 		switch (c) {
 		case 'h':
 			usage();
+			break;
+		case 'd':
+			debug++;
 			break;
 		case 's':
 			strncpy(serport, optarg, sizeof(serport));
@@ -113,6 +118,9 @@ int main(int argc, char **argv)
 		perror("Error: modbus_new failed");
 		goto out;
 	}
+
+	if (debug)
+		modbus_set_debug(mb, TRUE);
 
 	/* XXX ERS slave ID should be an option too */
 	if (modbus_set_slave(mb, 1)) {

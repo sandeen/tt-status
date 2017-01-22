@@ -4,9 +4,10 @@ A small test program using libmodbus to show status of a Triangle Tube boiler
 ## Help
 
     $ tt-status -h
-     Usage: tt-status [-h] [-s serial port][-i ip addr [-p port]]
+     Usage: tt-status [-h] [-d] [-s serial port][-i ip addr [-p port]]
     
     -h      Show this help
+    -d      Enable debug
     -s      Serial Port Device for ModBus/RTU
     -i      IP Address for ModBus/TCP
     -p      TCP Port for ModBus/TCP (optional, default 502)
