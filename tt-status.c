@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Eric Sandeen <sandeen@sandeen.net>
+ * Copyright (c) 2014,2017 Eric Sandeen <sandeen@sandeen.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -28,14 +28,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include <modbus/modbus.h>
 
 #define CHECK_BIT(var,pos) ((var) & (1<<(pos)))
 
 void usage(void)
 {
-	printf("Usage: tt-status [-h] [-d] [-S slave] [-s serial port][-i ip addr [-p port]]\n\n");
+	printf("Usage: tt-status [-hkd] [-S slave] [-s serial port][-i ip addr [-p port]]\n\n");
 	printf("-h\tShow this help\n");
+	printf("-k\tQuery Lochinvar boiler\n");
 	printf("-d\tEnable debug\n");
 	printf("-S\tModbus slave ID, default 1\n");
 	printf("-s\tSerial Port Device for ModBus/RTU\n");
@@ -54,7 +56,7 @@ struct status_bits {
 	char	*desc;
 };
 
-struct status_bits status[] = {
+struct status_bits tt_status[] = {
 	{ 0, "PC Manual Mode" },
 	{ 1, "DHW Mode" },
 	{ 2, "CH Mode" },
@@ -65,23 +67,158 @@ struct status_bits status[] = {
 	{ 7, "System / CH2 Pump" }
 };
 
+
+int query_triangle_tube(modbus_t *mb)
+{
+	int		i;
+	uint16_t	regs[8];	/* Holds results of register reads */
+
+	/* Read 1 register from the address 0 for status bitfield */
+	if (modbus_read_input_registers(mb, 0, 1, regs) != 1) {
+		printf("Error: Modbus read of 1 byte at addr 0 failed\n");
+		return 1;
+	}
+
+	printf("Status:\n");
+	if (regs[0] == 0)
+		printf(" Standby\n");
+
+	for (i = 0; i < 7; i++) {
+		if (CHECK_BIT(regs[0], i))
+			printf(" %s\n", tt_status[i].desc);
+	}
+
+	/* Read 9 registers from the address 0x300 */
+	if (modbus_read_input_registers(mb, 0x300, 9, regs) != 9) {
+		printf("Error: Modbus read of 9 bytes at addr 0x300 failed\n");
+		return 1;
+	}
+
+	/* Supply temp: 0.1 degree C, 16 bits */
+	printf("Supply temp:\t\t%3d °F\n", c_to_f(regs[0]/10));
+
+	/* Return temp: degrees C, 8 bits */
+	printf("Return temp:\t\t%3d °F\n", c_to_f(regs[1]));
+
+	/* DHW storage temp */
+	printf("DHW Storage temp:\t%3d °F\n", c_to_f(regs[2]));
+
+	/* Flue temp: degrees C, 8 bits */
+	printf("Flue temp:\t\t%3d °F\n", c_to_f(regs[3]));
+
+	/* Outdoor temp: degrees C, 8 bits */
+	printf("Outdoor temp:\t\t%3d °F\n", c_to_f((int16_t)regs[4]));
+
+	/* Future use */
+
+	/* Flame Ionization: μA, 8 bits */
+	printf("Flame Ionization:\t%3d μA\n", regs[6]);
+
+	/* Firing rate: % 8 bits */
+	printf("Firing rate:\t\t%3d %\n", regs[7]);
+
+	/* Boiler setpoint: degrees C, 8 bits, only if firing */
+	if (regs[8] != 0x8000)
+		printf("Boiler Setpoint:\t\t%3d °F\n", c_to_f(regs[8]));
+
+	/* Read 3 registers from the address 0x200*/
+	/* modbus_read_registers(mb, 0x200, 3, regs); */
+
+	/* Read 2 registers from the address 0x500 */
+	if (modbus_read_registers(mb, 0x500, 2, regs) != 2) {
+		printf("Error: Modbus read of 2 bytes at addr 0x500 failed\n");
+		return 1;
+	}
+
+	/* CH1 Maximum Setpoint C, 8 bits */
+	printf("CH1 Maximum Setpoint:\t%3d °F\n", c_to_f(regs[0]));
+
+	/* DHW setpoint: degrees C, 8 bits, only if set */
+	if (regs[1] != 0x8000)
+		printf("DHW Setpoint:\t\t%3d °F\n", c_to_f(regs[1]));
+
+	return 0;
+}
+
+int query_lochinvar(modbus_t *mb)
+{
+	int		i;
+	uint16_t	regs_30000[15];	/* Holds results of register reads */
+	uint16_t	regs_40000[7];	/* Holds results of register reads */
+
+	/* Read 15 registers from the address 30000 */
+	if (modbus_read_input_registers(mb, 30000, 15, regs_30000) != 15) {
+		printf("Error: Modbus read of 15 bytes at addr 30000 failed\n");
+		return 1;
+	}
+
+	/* Read 7 registers from the address 40000 */
+	if (modbus_read_registers(mb, 40000, 7, regs_40000) != 7) {
+		printf("Error: Modbus read of 7 bytes at addr 40000 failed\n");
+		return 1;
+	}
+
+# if 0
+	/* Not sure about Lochinvar status yet */
+	printf("Status:\n");
+	if (regs[0] == 0)
+		printf(" Standby\n");
+
+	for (i = 0; i < 7; i++) {
+		if (CHECK_BIT(regs[0], i))
+			printf(" %s\n", status[i].desc);
+	}
+#else
+	printf("Status: 0x%x\n", regs_30000[14]);
+#endif
+
+	/* Supply temp: 0.1 degree C, 16 bits */
+	printf("Supply temp:\t\t%3d °F\n", c_to_f(regs_30000[9]/10));
+
+	/* Return temp: degrees C, 8 bits */
+	printf("Return temp:\t\t%3d °F\n", c_to_f(regs_30000[10]/10));
+
+	/* DHW storage temp */
+	printf("DHW Storage temp:\t%3d °F\n", c_to_f(regs_40000[5]/10));
+
+	/* Flue temp: degrees C, 8 bits */
+	printf("Flue temp:\t\t%3d °F\n", c_to_f(regs_30000[11]/10));
+
+	/* Outdoor temp: degrees C, 8 bits */
+	printf("Outdoor temp:\t\t%3d °F\n", c_to_f(regs_40000[6]/10));
+
+	/* Firing rate: % 8 bits */
+	printf("Firing rate:\t\t%3d %\n", regs_30000[12]);
+
+	/* Boiler setpoints, not sure the difference  */
+	printf("System Setpoint:\t\t%3d °F\n", c_to_f(regs_30000[4]/2));
+	printf("Outlet Setpoint:\t\t%3d °F\n", c_to_f(regs_30000[8]/2));
+
+	/* DHW setpoint: degrees C */
+	printf("DHW Setpoint:\t\t%3d °F\n", c_to_f(regs_40000[4]/2));
+
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	int c;
-	int i;
-	int err = 1;
+	int err = 0;
 	int slave = 1;		/* default Modbus slave ID */
 	int debug = 0;		/* debug output */
 	int port = 502;		/* default ModBus/TCP port */
 	char ipaddr[16] = "";	/* ModBus/TCP ip address */
 	char serport[32] = "";	/* ModBus/RTU serial port */
+	bool lochinvar = false;	/* Query lochinvar not triangle tube */
 	modbus_t *mb;		/* ModBus context */
-	uint16_t regs[8];	/* Holds results of register reads */
 
-	while ((c = getopt(argc, argv, "hdS:s:i:p:")) != -1) {
+	while ((c = getopt(argc, argv, "hldS:s:i:p:")) != -1) {
 		switch (c) {
 		case 'h':
 			usage();
+			break;
+		case 'l':
+			lochinvar = true;
 			break;
 		case 'd':
 			debug++;
@@ -137,71 +274,11 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
-	/* Read 1 register from the address 0 for status bitfield */
-	if (modbus_read_input_registers(mb, 0, 1, regs) != 1) {
-		printf("Error: Modbus read of 1 byte at addr 0 failed\n");
-		goto out;
-	}
+	if (lochinvar)
+		err = query_lochinvar(mb);
+	else
+		err = query_triangle_tube(mb);
 
-	printf("Status:\n");
-	if (regs[0] == 0)
-		printf(" Standby\n");
-
-	for (i = 0; i < 7; i++) {
-		if (CHECK_BIT(regs[0], i))
-			printf(" %s\n", status[i].desc);
-	}
-
-	/* Read 9 registers from the address 0x300 */
-	if (modbus_read_input_registers(mb, 0x300, 9, regs) != 9) {
-		printf("Error: Modbus read of 9 bytes at addr 0x300 failed\n");
-		goto out;
-	}
-
-	/* Supply temp: 0.1 degree C, 16 bits */
-	printf("Supply temp:\t\t%3d °F\n", c_to_f(regs[0]/10));
-
-	/* Return temp: degrees C, 8 bits */
-	printf("Return temp:\t\t%3d °F\n", c_to_f(regs[1]));
-
-	/* DHW storage temp */
-	printf("DHW Storage temp:\t%3d °F\n", c_to_f(regs[2]));
-
-	/* Flue temp: degrees C, 8 bits */
-	printf("Flue temp:\t\t%3d °F\n", c_to_f(regs[3]));
-
-	/* Outdoor temp: degrees C, 8 bits */
-	printf("Outdoor temp:\t\t%3d °F\n", c_to_f((int16_t)regs[4]));
-
-	/* Future use */
-
-	/* Flame Ionization: μA, 8 bits */
-	printf("Flame Ionization:\t%3d μA\n", regs[6]);
-
-	/* Firing rate: % 8 bits */
-	printf("Firing rate:\t\t%3d %\n", regs[7]);
-
-	/* Boiler setpoint: degrees C, 8 bits, only if firing */
-	if (regs[8] != 0x8000)
-		printf("Boiler Setpoint:\t\t%3d °F\n", c_to_f(regs[8]));
-
-	/* Read 3 registers from the address 0x200*/
-	/* modbus_read_registers(mb, 0x200, 3, regs); */
-
-	/* Read 2 registers from the address 0x500 */
-	if (modbus_read_registers(mb, 0x500, 2, regs) != 2) {
-		printf("Error: Modbus read of 2 bytes at addr 0x500 failed\n");
-		goto out;
-	}
-
-	/* CH1 Maximum Setpoint C, 8 bits */
-	printf("CH1 Maximum Setpoint:\t%3d °F\n", c_to_f(regs[0]));
-
-	/* DHW setpoint: degrees C, 8 bits, only if set */
-	if (regs[1] != 0x8000)
-		printf("DHW Setpoint:\t\t%3d °F\n", c_to_f(regs[1]));
-
-	err = 0;
 out:
 	modbus_close(mb);
 	modbus_free(mb);
