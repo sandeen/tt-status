@@ -143,18 +143,28 @@ int query_triangle_tube(modbus_t *mb)
 int query_lochinvar(modbus_t *mb)
 {
 	int		i;
-	uint16_t	regs_30000[15];	/* Holds results of register reads */
-	uint16_t	regs_40000[7];	/* Holds results of register reads */
+	uint16_t	regs_30000[17];	/* Holds results of register reads */
+	uint16_t	regs_40000[9];	/* Holds results of register reads */
 
-	/* Read 15 registers from the address 30000 */
-	if (modbus_read_input_registers(mb, 30000, 15, regs_30000) != 15) {
-		printf("Error: Modbus read of 15 bytes at addr 30000 failed\n");
+	/*
+	 * The Lochinvar modbus map has register regions starting at addresses
+	 * 30001 and 40001.  It's convenient in the code to use i.e.
+	 * regs_30000[1] to be the value read from address 30001, etc, so
+	 * we play a couple games here to get that lined up, because
+	 * i.e. address 30000 is not valid to read.  First, set the initial
+	 * element to 0 because we won't read anything from there.
+	 */
+	regs_30000[0] = regs_40000[0] = 0;
+
+	/* Read 16 registers from the address 30001 */
+	if (modbus_read_input_registers(mb, 30001, 16, &regs_30000[1]) != 16) {
+		printf("Error: Modbus read of 16 bytes at addr 30001 failed\n");
 		return 1;
 	}
 
-	/* Read 7 registers from the address 40000 */
-	if (modbus_read_registers(mb, 40000, 7, regs_40000) != 7) {
-		printf("Error: Modbus read of 7 bytes at addr 40000 failed\n");
+	/* Read 8 registers from the address 40001 */
+	if (modbus_read_registers(mb, 40001, 8, &regs_40000[1]) != 8) {
+		printf("Error: Modbus read of 8 bytes at addr 40001 failed\n");
 		return 1;
 	}
 
@@ -253,6 +263,8 @@ int main(int argc, char **argv)
 
 	if (ipaddr[0])
 		mb = modbus_new_tcp(ipaddr, port);
+	else if (lochinvar)
+		mb = modbus_new_rtu(serport, 9600, 'N', 8, 2);
 	else
 		mb = modbus_new_rtu(serport, 38400, 'N', 8, 1);
 
