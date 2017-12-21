@@ -151,19 +151,25 @@ int query_lochinvar(modbus_t *mb)
 	 * 30001 and 40001.  It's convenient in the code to use i.e.
 	 * regs_30000[1] to be the value read from address 30001, etc, so
 	 * we play a couple games here to get that lined up, because
-	 * i.e. address 30000 is not valid to read.  First, set the initial
-	 * element to 0 because we won't read anything from there.
+	 * i.e. address 30000 is not valid to read.  
+	 * Also: the "4" in "4XXXXX" is implicit, that is the input register
+	 * range.  So when the docs say "400001" we read input register 00001.
+	 */
+
+	/*
+	 * First, set the initial element to 0 because we won't read anything
+	 * from there.
 	 */
 	regs_30000[0] = regs_40000[0] = 0;
 
-	/* Read 16 registers from the address 30001 */
-	if (modbus_read_input_registers(mb, 30001, 16, &regs_30000[1]) != 16) {
+	/* Read 16 registers from the address (3)0001 */
+	if (modbus_read_input_registers(mb, 1, 16, &regs_30000[1]) != 16) {
 		printf("Error: Modbus read of 16 bytes at addr 30001 failed\n");
 		return 1;
 	}
 
-	/* Read 8 registers from the address 40001 */
-	if (modbus_read_registers(mb, 40001, 8, &regs_40000[1]) != 8) {
+	/* Read 8 registers from the address (4)0001 */
+	if (modbus_read_registers(mb, 1, 8, &regs_40000[1]) != 8) {
 		printf("Error: Modbus read of 8 bytes at addr 40001 failed\n");
 		return 1;
 	}
