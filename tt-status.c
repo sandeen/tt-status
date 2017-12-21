@@ -53,12 +53,13 @@ int c_to_f(float c)
 	return ((c * 9)/5 + 32);
 }
 
+/* For status represented in bits */
 struct status_bits {
 	int	bit;
 	char	*desc;
 };
 
-struct status_bits tt_status[] = {
+struct status_bits tt_status_bits[] = {
 	{ 0, "PC Manual Mode" },
 	{ 1, "DHW Mode" },
 	{ 2, "CH Mode" },
@@ -69,6 +70,24 @@ struct status_bits tt_status[] = {
 	{ 7, "System / CH2 Pump" }
 };
 
+/* For status represented in values */
+struct status_values {
+	int	value;
+	char	*desc;
+};
+
+/* This doesn't cover all of them */
+struct status_values lochinvar_status_values[] = {
+	{  9, "Outdoor Shutdown" },
+	{ 10, "Switched off" },
+	{ 19, "DHW Heating" },
+	{ 21, "Space Heating" },
+	{ 30, "Freeze Protection" },
+	{ 32, "DHW Pump Delay" },
+	{ 33, "Space Heat Pump Delay" },
+	{ 34, "Idle" },
+	{ 32764, "Busy updating status" }
+};
 
 int query_triangle_tube(modbus_t *mb)
 {
@@ -87,7 +106,7 @@ int query_triangle_tube(modbus_t *mb)
 
 	for (i = 0; i < 7; i++) {
 		if (CHECK_BIT(regs[0], i))
-			printf(" %s\n", tt_status[i].desc);
+			printf(" %s\n", tt_status_bits[i].desc);
 	}
 
 	/* Read 9 registers from the address 0x300 */
@@ -144,7 +163,7 @@ int query_triangle_tube(modbus_t *mb)
 
 int query_lochinvar(modbus_t *mb)
 {
-	int		i;
+	int		i, nr_status_values;
 	uint16_t	regs_30000[16];	/* Holds results of register reads */
 	uint16_t	regs_40000[8];	/* Holds results of register reads */
 
@@ -182,18 +201,14 @@ int query_lochinvar(modbus_t *mb)
 			printf("regs_40000[%d] is 0x%x\n", i, regs_40000[i]);
 	}
 
-# if 0
-	/* Not sure about Lochinvar status yet */
-	printf("Status:\n");
-	if (regs[0] == 0)
-		printf(" Standby\n");
+	nr_status_values = sizeof(lochinvar_status_values) /
+				sizeof(struct status_values);
 
-	for (i = 0; i < 7; i++) {
-		if (CHECK_BIT(regs[0], i))
-			printf(" %s\n", status[i].desc);
+	printf("Status:\n");
+	for (i = 0; i < nr_status_value; i++) {
+		if (regs_30000[13] == lochinvar_status_values[i].value)
+			printf(" %s\n", lochinvar_status_values[i].desc);
 	}
-	printf("Status: 0x%x\n", regs_30000[14]);
-#endif
 
 	/* Supply temp: 0.1 degree C, 16 bits */
 	printf("Supply temp:\t\t%3d °F\n", c_to_f(regs_30000[8]/10));
