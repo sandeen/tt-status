@@ -205,7 +205,7 @@ int query_lochinvar(modbus_t *mb)
 				sizeof(struct status_values);
 
 	printf("Status:\n");
-	for (i = 0; i < nr_status_value; i++) {
+	for (i = 0; i < nr_status_values; i++) {
 		if (regs_30000[13] == lochinvar_status_values[i].value)
 			printf(" %s\n", lochinvar_status_values[i].desc);
 	}
