@@ -33,11 +33,13 @@
 
 #define CHECK_BIT(var,pos) ((var) & (1<<(pos)))
 
+int debug;			/* show debug output, global */
+
 void usage(void)
 {
-	printf("Usage: tt-status [-hkd] [-S slave] [-s serial port][-i ip addr [-p port]]\n\n");
+	printf("Usage: tt-status [-hld] [-S slave] [-s serial port][-i ip addr [-p port]]\n\n");
 	printf("-h\tShow this help\n");
-	printf("-k\tQuery Lochinvar boiler\n");
+	printf("-l\tQuery Lochinvar boiler\n");
 	printf("-d\tEnable debug\n");
 	printf("-S\tModbus slave ID, default 1\n");
 	printf("-s\tSerial Port Device for ModBus/RTU\n");
@@ -143,35 +145,41 @@ int query_triangle_tube(modbus_t *mb)
 int query_lochinvar(modbus_t *mb)
 {
 	int		i;
-	uint16_t	regs_30000[17];	/* Holds results of register reads */
-	uint16_t	regs_40000[9];	/* Holds results of register reads */
+	uint16_t	regs_30000[16];	/* Holds results of register reads */
+	uint16_t	regs_40000[8];	/* Holds results of register reads */
 
 	/*
 	 * The Lochinvar modbus map has register regions starting at addresses
-	 * 30001 and 40001.  It's convenient in the code to use i.e.
-	 * regs_30000[1] to be the value read from address 30001, etc, so
-	 * we play a couple games here to get that lined up, because
-	 * i.e. address 30000 is not valid to read.  
-	 * Also: the "4" in "4XXXXX" is implicit, that is the input register
-	 * range.  So when the docs say "400001" we read input register 00001.
+	 * 30001 and 40001.
+	 *
+	 * The "4" in "4XXXXX" is implicit, that is the input register
+	 * range.  Further, Registers are addressed starting at zero: registers
+	 * 1–16 are addressed as 0–15.  So when the docs say "400001" we
+	 * actually read_input_register(0).
+	 *
+	 * So when we see something documented at 30001, we actually:
+	 *  - read 30000 into regs_30000
+	 *  - get the value from regs_30000[0]
 	 */
 
-	/*
-	 * First, set the initial element to 0 because we won't read anything
-	 * from there.
-	 */
-	regs_30000[0] = regs_40000[0] = 0;
-
-	/* Read 16 registers from the address (3)0001 */
-	if (modbus_read_input_registers(mb, 1, 16, &regs_30000[1]) != 16) {
+	/* Read 16 registers from the address (3)0000 */
+	if (modbus_read_input_registers(mb, 0, 16, regs_30000) != 16) {
 		printf("Error: Modbus read of 16 bytes at addr 30001 failed\n");
 		return 1;
 	}
 
 	/* Read 8 registers from the address (4)0001 */
-	if (modbus_read_registers(mb, 1, 8, &regs_40000[1]) != 8) {
+	if (modbus_read_registers(mb, 0, 8, regs_40000) != 8) {
 		printf("Error: Modbus read of 8 bytes at addr 40001 failed\n");
 		return 1;
+	}
+
+
+	if (debug) {
+		for (i = 0; i < 16; i++)
+			printf("regs_30000[%d] is 0x%x\n", i, regs_30000[i]);
+		for (i = 0; i < 8; i++)
+			printf("regs_40000[%d] is 0x%x\n", i, regs_40000[i]);
 	}
 
 # if 0
@@ -184,34 +192,33 @@ int query_lochinvar(modbus_t *mb)
 		if (CHECK_BIT(regs[0], i))
 			printf(" %s\n", status[i].desc);
 	}
-#else
 	printf("Status: 0x%x\n", regs_30000[14]);
 #endif
 
 	/* Supply temp: 0.1 degree C, 16 bits */
-	printf("Supply temp:\t\t%3d °F\n", c_to_f(regs_30000[9]/10));
+	printf("Supply temp:\t\t%3d °F\n", c_to_f(regs_30000[8]/10));
 
 	/* Return temp: degrees C, 8 bits */
-	printf("Return temp:\t\t%3d °F\n", c_to_f(regs_30000[10]/10));
+	printf("Return temp:\t\t%3d °F\n", c_to_f(regs_30000[9]/10));
 
 	/* DHW storage temp */
-	printf("DHW Storage temp:\t%3d °F\n", c_to_f(regs_40000[5]/10));
+	printf("DHW Storage temp:\t%3d °F\n", c_to_f(regs_40000[4]/10));
 
 	/* Flue temp: degrees C, 8 bits */
-	printf("Flue temp:\t\t%3d °F\n", c_to_f(regs_30000[11]/10));
+	printf("Flue temp:\t\t%3d °F\n", c_to_f(regs_30000[10]/10));
 
 	/* Outdoor temp: degrees C, 8 bits */
-	printf("Outdoor temp:\t\t%3d °F\n", c_to_f(regs_40000[6]/10));
+	printf("Outdoor temp:\t\t%3d °F\n", c_to_f(regs_40000[5]/10));
 
 	/* Firing rate: % 8 bits */
-	printf("Firing rate:\t\t%3d %\n", regs_30000[12]);
+	printf("Firing rate:\t\t%3d %\n", regs_30000[11]);
 
 	/* Boiler setpoints, not sure the difference  */
-	printf("System Setpoint:\t\t%3d °F\n", c_to_f(regs_30000[4]/2));
-	printf("Outlet Setpoint:\t\t%3d °F\n", c_to_f(regs_30000[8]/2));
+	printf("System Setpoint:\t\t%3d °F\n", c_to_f(regs_30000[3]/2));
+	printf("Outlet Setpoint:\t\t%3d °F\n", c_to_f(regs_30000[7]/2));
 
 	/* DHW setpoint: degrees C */
-	printf("DHW Setpoint:\t\t%3d °F\n", c_to_f(regs_40000[4]/2));
+	printf("DHW Setpoint:\t\t%3d °F\n", c_to_f(regs_40000[3]/2));
 
 	return 0;
 }
@@ -221,7 +228,6 @@ int main(int argc, char **argv)
 	int c;
 	int err = 0;
 	int slave = 1;		/* default Modbus slave ID */
-	int debug = 0;		/* debug output */
 	int port = 502;		/* default ModBus/TCP port */
 	char ipaddr[16] = "";	/* ModBus/TCP ip address */
 	char serport[32] = "";	/* ModBus/RTU serial port */
